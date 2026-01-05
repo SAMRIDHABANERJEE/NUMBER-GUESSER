@@ -1,0 +1,5 @@
+{
+  "name": "Gemini Digit Guesser",
+  "description": "A number guessing game where the player draws a digit on a canvas, and Gemini AI recognizes it. The goal is to match a randomly generated target number. Provides up to two hints per game. This application uses a web canvas for drawing with mouse/touch, not webcam-based air drawing, as the latter requires a specialized backend.",
+  "requestFramePermissions": []
+}
