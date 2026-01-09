@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle, useCallback } from 'react';
-import { CANVAS_SIZE, PEN_COLOR, PEN_WIDTH } from '../constants'; // CRITICAL: Explicitly import
+import { CANVAS_SIZE, PEN_COLOR, PEN_WIDTH } from '../constants';
 
 export interface DrawingCanvasRef {
   clearCanvas: () => void;
@@ -28,14 +28,19 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, DrawingCanvasProps>((_props, 
     return null;
   }, []);
 
-  // Initialize canvas on mount
-  useEffect(() => {
+  const clearCanvas = useCallback(() => {
     const ctx = getContext();
-    if (ctx) {
-      // Ensure canvas is clear on initial load
-      clearCanvas();
+    const canvas = canvasRef.current;
+    if (ctx && canvas) {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
   }, [getContext]);
+
+  // Initialize canvas on mount
+  useEffect(() => {
+    clearCanvas();
+  }, [clearCanvas]);
 
   const drawLine = useCallback((ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number) => {
     ctx.beginPath();
@@ -49,30 +54,47 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, DrawingCanvasProps>((_props, 
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
+    
     let clientX, clientY;
-
-    if (event.nativeEvent instanceof TouchEvent) {
+    if ('touches' in event.nativeEvent) {
       clientX = event.nativeEvent.touches[0].clientX;
       clientY = event.nativeEvent.touches[0].clientY;
     } else {
-      clientX = event.nativeEvent.clientX;
-      clientY = event.nativeEvent.clientY;
+      clientX = (event as React.MouseEvent).clientX;
+      clientY = (event as React.MouseEvent).clientY;
     }
 
+    // Scale coordinates based on canvas internal size vs display size
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
     return {
-      x: clientX - rect.left,
-      y: clientY - rect.top,
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
     };
   }, []);
 
-  const handleMouseDown = useCallback((event: React.MouseEvent | React.TouchEvent) => {
+  const handleStart = useCallback((event: React.MouseEvent | React.TouchEvent) => {
+    if ('touches' in event.nativeEvent) {
+      // Prevent scrolling while drawing on touch devices
+      if (event.cancelable) event.preventDefault();
+    }
     const { x, y } = getCanvasRelativeCoordinates(event);
     setIsDrawing(true);
     setLastPoint({ x, y });
-  }, [getCanvasRelativeCoordinates]);
 
-  const handleMouseMove = useCallback((event: React.MouseEvent | React.TouchEvent) => {
+    // Draw a single dot in case the user just clicks/taps
+    const ctx = getContext();
+    if (ctx) {
+      drawLine(ctx, x, y, x, y);
+    }
+  }, [getCanvasRelativeCoordinates, getContext, drawLine]);
+
+  const handleMove = useCallback((event: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing) return;
+    if ('touches' in event.nativeEvent) {
+      if (event.cancelable) event.preventDefault();
+    }
     const { x, y } = getCanvasRelativeCoordinates(event);
     const ctx = getContext();
     if (ctx && lastPoint) {
@@ -81,38 +103,19 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, DrawingCanvasProps>((_props, 
     }
   }, [isDrawing, lastPoint, getContext, getCanvasRelativeCoordinates, drawLine]);
 
-  const handleMouseUp = useCallback(() => {
+  const handleEnd = useCallback(() => {
     setIsDrawing(false);
     setLastPoint(null);
   }, []);
 
-  const handleMouseLeave = useCallback(() => {
-    if (isDrawing) { // Only stop drawing if mouse leaves while drawing
-      setIsDrawing(false);
-      setLastPoint(null);
-    }
-  }, [isDrawing]);
-
-
-  const clearCanvas = useCallback(() => {
-    const ctx = getContext();
-    if (ctx) {
-      ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-      // Optional: fill with a background color if desired, e.g., for consistency with image format
-      // ctx.fillStyle = '#000000'; // Black background
-      // ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-    }
-  }, [getContext]);
-
   const getImageData = useCallback(() => {
     const canvas = canvasRef.current;
     if (canvas) {
-      return canvas.toDataURL('image/png'); // Returns data URL (base64)
+      return canvas.toDataURL('image/png');
     }
-    return 'data:,'; // Empty data URL
+    return 'data:,';
   }, []);
 
-  // Expose functions to parent component via ref
   useImperativeHandle(ref, () => ({
     clearCanvas,
     getImageData,
@@ -123,15 +126,15 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, DrawingCanvasProps>((_props, 
       ref={canvasRef}
       width={CANVAS_SIZE}
       height={CANVAS_SIZE}
-      className="bg-gray-700 touch-none w-full h-full"
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
-      onTouchStart={handleMouseDown}
-      onTouchMove={handleMouseMove}
-      onTouchEnd={handleMouseUp}
-      onTouchCancel={handleMouseUp}
+      className="w-full h-full touch-none"
+      onMouseDown={handleStart}
+      onMouseMove={handleMove}
+      onMouseUp={handleEnd}
+      onMouseLeave={handleEnd}
+      onTouchStart={handleStart}
+      onTouchMove={handleMove}
+      onTouchEnd={handleEnd}
+      onTouchCancel={handleEnd}
     />
   );
 });
