@@ -6,56 +6,39 @@ export interface DrawingCanvasRef {
   getImageData: () => string;
 }
 
-interface DrawingCanvasProps {}
-
-const DrawingCanvas = forwardRef<DrawingCanvasRef, DrawingCanvasProps>((_props, ref) => {
+const DrawingCanvas = forwardRef<DrawingCanvasRef, {}>((_props, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
 
-  const getContext = useCallback(() => {
+  const setupCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (canvas) {
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { alpha: false });
       if (ctx) {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.strokeStyle = PEN_COLOR;
         ctx.lineWidth = PEN_WIDTH;
-        return ctx;
       }
     }
-    return null;
   }, []);
 
-  const clearCanvas = useCallback(() => {
-    const ctx = getContext();
-    const canvas = canvasRef.current;
-    if (ctx && canvas) {
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-  }, [getContext]);
-
-  // Initialize canvas on mount
   useEffect(() => {
-    clearCanvas();
-  }, [clearCanvas]);
+    setupCanvas();
+    window.addEventListener('resize', setupCanvas);
+    return () => window.removeEventListener('resize', setupCanvas);
+  }, [setupCanvas]);
 
-  const drawLine = useCallback((ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number) => {
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-    ctx.closePath();
-  }, []);
-
-  const getCanvasRelativeCoordinates = useCallback((event: React.MouseEvent | React.TouchEvent) => {
+  const getCoordinates = useCallback((event: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
     
+    const rect = canvas.getBoundingClientRect();
     let clientX, clientY;
+    
     if ('touches' in event.nativeEvent) {
       clientX = event.nativeEvent.touches[0].clientX;
       clientY = event.nativeEvent.touches[0].clientY;
@@ -64,61 +47,60 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, DrawingCanvasProps>((_props, 
       clientY = (event as React.MouseEvent).clientY;
     }
 
-    // Scale coordinates based on canvas internal size vs display size
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY,
-    };
+    // Precise scaling to map display coordinates to internal canvas pixels
+    const x = (clientX - rect.left) * (canvas.width / rect.width);
+    const y = (clientY - rect.top) * (canvas.height / rect.height);
+    return { x, y };
   }, []);
 
-  const handleStart = useCallback((event: React.MouseEvent | React.TouchEvent) => {
-    if ('touches' in event.nativeEvent) {
-      // Prevent scrolling while drawing on touch devices
-      if (event.cancelable) event.preventDefault();
-    }
-    const { x, y } = getCanvasRelativeCoordinates(event);
+  const startDrawing = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    const coords = getCoordinates(e);
     setIsDrawing(true);
-    setLastPoint({ x, y });
-
-    // Draw a single dot in case the user just clicks/taps
-    const ctx = getContext();
-    if (ctx) {
-      drawLine(ctx, x, y, x, y);
+    setLastPoint(coords);
+    
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.beginPath();
+        ctx.arc(coords.x, coords.y, PEN_WIDTH / 2, 0, Math.PI * 2);
+        ctx.fillStyle = PEN_COLOR;
+        ctx.fill();
+        ctx.closePath();
+      }
     }
-  }, [getCanvasRelativeCoordinates, getContext, drawLine]);
+  }, [getCoordinates]);
 
-  const handleMove = useCallback((event: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawing) return;
-    if ('touches' in event.nativeEvent) {
-      if (event.cancelable) event.preventDefault();
-    }
-    const { x, y } = getCanvasRelativeCoordinates(event);
-    const ctx = getContext();
-    if (ctx && lastPoint) {
-      drawLine(ctx, lastPoint.x, lastPoint.y, x, y);
-      setLastPoint({ x, y });
-    }
-  }, [isDrawing, lastPoint, getContext, getCanvasRelativeCoordinates, drawLine]);
+  const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawing || !lastPoint) return;
+    if ('touches' in e.nativeEvent) e.preventDefault();
 
-  const handleEnd = useCallback(() => {
+    const coords = getCoordinates(e);
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.beginPath();
+        ctx.moveTo(lastPoint.x, lastPoint.y);
+        ctx.lineTo(coords.x, coords.y);
+        ctx.stroke();
+        ctx.closePath();
+      }
+    }
+    setLastPoint(coords);
+  }, [isDrawing, lastPoint, getCoordinates]);
+
+  const stopDrawing = useCallback(() => {
     setIsDrawing(false);
     setLastPoint(null);
   }, []);
 
-  const getImageData = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      return canvas.toDataURL('image/png');
-    }
-    return 'data:,';
-  }, []);
-
   useImperativeHandle(ref, () => ({
-    clearCanvas,
-    getImageData,
+    clearCanvas: setupCanvas,
+    getImageData: () => {
+      const canvas = canvasRef.current;
+      return canvas ? canvas.toDataURL('image/png') : 'data:,';
+    }
   }));
 
   return (
@@ -126,15 +108,14 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, DrawingCanvasProps>((_props, 
       ref={canvasRef}
       width={CANVAS_SIZE}
       height={CANVAS_SIZE}
-      className="w-full h-full touch-none"
-      onMouseDown={handleStart}
-      onMouseMove={handleMove}
-      onMouseUp={handleEnd}
-      onMouseLeave={handleEnd}
-      onTouchStart={handleStart}
-      onTouchMove={handleMove}
-      onTouchEnd={handleEnd}
-      onTouchCancel={handleEnd}
+      className="w-full h-full touch-none cursor-crosshair"
+      onMouseDown={startDrawing}
+      onMouseMove={draw}
+      onMouseUp={stopDrawing}
+      onMouseLeave={stopDrawing}
+      onTouchStart={startDrawing}
+      onTouchMove={draw}
+      onTouchEnd={stopDrawing}
     />
   );
 });

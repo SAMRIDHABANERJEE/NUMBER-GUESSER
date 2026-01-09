@@ -4,7 +4,6 @@ import { WebcamCapture, WebcamCaptureRef } from './components/WebcamCapture';
 import { Button } from './components/Button';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { recognizeDigit } from './services/geminiService';
-import { MAX_HINTS } from './constants';
 
 type GameStatus = 'playing' | 'win' | 'lose';
 type InputMode = 'draw' | 'webcam';
@@ -12,7 +11,7 @@ type InputMode = 'draw' | 'webcam';
 const App: React.FC = () => {
   const [targetNumber, setTargetNumber] = useState<number | null>(null);
   const [recognizedDigit, setRecognizedDigit] = useState<number | null>(null);
-  const [gameStatus, setGameStatus] = useState<'playing' | 'win' | 'lose'>('playing');
+  const [gameStatus, setGameStatus] = useState<GameStatus>('playing');
   const [inputMode, setInputMode] = useState<InputMode>('draw');
   const [wrongGuesses, setWrongGuesses] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -21,39 +20,27 @@ const App: React.FC = () => {
   const canvasRef = useRef<DrawingCanvasRef>(null);
   const webcamRef = useRef<WebcamCaptureRef>(null);
 
-  const generateTargetNumber = useCallback(() => {
-    return Math.floor(Math.random() * 10);
-  }, []);
-
   const startNewGame = useCallback(() => {
-    setTargetNumber(generateTargetNumber());
+    setTargetNumber(Math.floor(Math.random() * 10));
     setRecognizedDigit(null);
     setGameStatus('playing');
     setWrongGuesses(0);
     setError(null);
     canvasRef.current?.clearCanvas();
-  }, [generateTargetNumber]);
+  }, []);
 
   useEffect(() => {
     startNewGame();
   }, [startNewGame]);
 
   const getHints = () => {
-    const hints = [];
     if (targetNumber === null) return [];
-    
-    if (wrongGuesses >= 1) {
-      hints.push(`Clue 1: The number is ${targetNumber % 2 === 0 ? 'even' : 'odd'}.`);
-    }
-    if (wrongGuesses >= 2) {
-      hints.push(`Clue 2: The number is ${targetNumber > 4 ? 'greater than 4' : 'less than or equal to 4'}.`);
-    }
+    const hints = [];
+    if (wrongGuesses >= 1) hints.push(`The number is ${targetNumber % 2 === 0 ? 'EVEN' : 'ODD'}.`);
+    if (wrongGuesses >= 2) hints.push(`The number is ${targetNumber > 4 ? 'GREATER than 4' : '4 or LESS'}.`);
     if (wrongGuesses >= 3) {
-      let status;
-      if (targetNumber === 0 || targetNumber === 1) status = 'neither prime nor composite';
-      else if ([2, 3, 5, 7].includes(targetNumber)) status = 'a prime number';
-      else status = 'a composite number';
-      hints.push(`Clue 3: The number is ${status}.`);
+      const isPrime = [2, 3, 5, 7].includes(targetNumber);
+      hints.push(`The number is ${isPrime ? 'PRIME' : (targetNumber < 2 ? 'NEITHER' : 'COMPOSITE')}.`);
     }
     return hints;
   };
@@ -63,7 +50,6 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     setError(null);
-    setRecognizedDigit(null);
 
     try {
       let imageData = '';
@@ -74,13 +60,11 @@ const App: React.FC = () => {
       }
 
       if (!imageData || imageData === 'data:,') {
-        throw new Error(inputMode === 'draw' ? 'Please draw a digit first.' : 'Camera not ready.');
+        throw new Error('No input provided.');
       }
 
       const recognized = await recognizeDigit(imageData, inputMode);
       const parsedDigit = parseInt(recognized, 10);
-
-      if (isNaN(parsedDigit)) throw new Error("AI couldn't identify a digit.");
 
       setRecognizedDigit(parsedDigit);
 
@@ -88,9 +72,7 @@ const App: React.FC = () => {
         setGameStatus('win');
       } else {
         setWrongGuesses(prev => prev + 1);
-        if (wrongGuesses + 1 >= 5) { // Game over after 5 wrong guesses
-           setGameStatus('lose');
-        }
+        if (wrongGuesses + 1 >= 5) setGameStatus('lose');
       }
     } catch (err: any) {
       setError(err.message || "Failed to recognize input.");
@@ -99,38 +81,35 @@ const App: React.FC = () => {
     }
   };
 
-  const showResult = gameStatus === 'win' || gameStatus === 'lose';
-
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center justify-center p-4">
-      <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-2xl mx-auto flex flex-col space-y-6">
-        <header className="text-center space-y-2">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 font-sans">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 md:p-8 w-full max-w-2xl mx-auto flex flex-col space-y-6">
+        
+        <header className="text-center">
           <h1 className="text-4xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">
             DIGIT SENSE AI
           </h1>
-          <p className="text-slate-400 font-medium italic">Guess the mystery digit (0-9)</p>
+          <p className="text-slate-400 text-sm font-medium mt-1 uppercase tracking-widest">Guess the hidden number</p>
         </header>
 
-        {/* Mode Toggle */}
-        <div className="flex bg-slate-700/50 p-1 rounded-xl self-center">
+        <div className="flex bg-slate-800 p-1 rounded-xl self-center border border-slate-700">
           <button 
             onClick={() => setInputMode('draw')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${inputMode === 'draw' ? 'bg-cyan-500 text-slate-900 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${inputMode === 'draw' ? 'bg-cyan-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
           >
-            DRAW MODE
+            DRAWING
           </button>
           <button 
             onClick={() => setInputMode('webcam')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${inputMode === 'webcam' ? 'bg-cyan-500 text-slate-900 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${inputMode === 'webcam' ? 'bg-cyan-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
           >
-            GESTURE MODE
+            WEBCAM
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Main Interaction Area */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="flex flex-col space-y-4">
-            <div className="relative aspect-square bg-black rounded-xl border-2 border-slate-600 overflow-hidden group shadow-[0_0_20px_rgba(6,182,212,0.1)]">
+            <div className="relative aspect-square bg-black rounded-2xl border-2 border-slate-700 overflow-hidden shadow-2xl group">
               {inputMode === 'draw' ? (
                 <DrawingCanvas ref={canvasRef} />
               ) : (
@@ -138,66 +117,81 @@ const App: React.FC = () => {
               )}
               
               {isLoading && (
-                <div className="absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center z-10 backdrop-blur-sm">
+                <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center z-30 backdrop-blur-sm">
                   <LoadingSpinner />
-                  <p className="mt-4 text-cyan-400 font-bold animate-pulse">AI IS THINKING...</p>
+                  <p className="mt-4 text-cyan-400 font-black text-xs animate-pulse">AI IS THINKING...</p>
                 </div>
               )}
 
-              {showResult && (
-                <div className={`absolute inset-0 flex flex-col items-center justify-center z-20 backdrop-blur-md ${gameStatus === 'win' ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
-                  <h2 className="text-4xl font-black text-white drop-shadow-lg">{gameStatus === 'win' ? 'VICTORY!' : 'DEFEAT!'}</h2>
-                  <p className="text-white font-bold mt-2">The digit was {targetNumber}</p>
-                  <Button onClick={startNewGame} className="mt-4 bg-white text-slate-900 hover:bg-slate-100">Play Again</Button>
+              {gameStatus !== 'playing' && (
+                <div className={`absolute inset-0 flex flex-col items-center justify-center z-40 backdrop-blur-md animate-in fade-in zoom-in duration-300 ${gameStatus === 'win' ? 'bg-emerald-600/90' : 'bg-rose-600/90'}`}>
+                  <h2 className="text-5xl font-black text-white">{gameStatus === 'win' ? 'WIN!' : 'LOSE!'}</h2>
+                  <p className="text-white font-bold text-xl mt-2">The number was {targetNumber}</p>
+                  <Button onClick={startNewGame} className="mt-8 bg-white text-slate-950 hover:bg-slate-100 border-none">PLAY AGAIN</Button>
                 </div>
               )}
             </div>
 
             <div className="flex gap-2">
-              <Button onClick={handleGuess} disabled={isLoading || showResult} className="flex-1">
-                {inputMode === 'draw' ? 'Submit Drawing' : 'Capture Gesture'}
+              <Button onClick={handleGuess} disabled={isLoading || gameStatus !== 'playing'} className="flex-1">
+                {inputMode === 'draw' ? 'SUBMIT GUESS' : 'CAPTURE GESTURE'}
               </Button>
               {inputMode === 'draw' && (
-                <Button onClick={() => canvasRef.current?.clearCanvas()} variant="secondary">Clear</Button>
+                <Button onClick={() => canvasRef.current?.clearCanvas()} variant="secondary" className="px-4">
+                  RESET
+                </Button>
               )}
             </div>
           </div>
 
-          {/* Info & Hints Area */}
           <div className="flex flex-col space-y-4">
-            <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 h-full">
-              <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Clues & History</h3>
+            <div className="bg-slate-950/50 border border-slate-800 p-6 rounded-2xl h-full flex flex-col">
+              <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-4">Clue Tracker</h3>
               
-              <div className="space-y-3">
-                {wrongGuesses === 0 && !showResult && (
-                  <p className="text-slate-500 italic text-sm">Submit your first guess to reveal clues...</p>
-                )}
-                
-                {getHints().map((hint, i) => (
-                  <div key={i} className="flex items-start space-x-2 animate-in fade-in slide-in-from-left-2">
-                    <span className="text-cyan-400 mt-1">✦</span>
-                    <p className="text-slate-200 text-sm font-medium">{hint}</p>
+              <div className="flex-1 space-y-4">
+                {wrongGuesses === 0 && gameStatus === 'playing' ? (
+                  <p className="text-slate-600 text-xs italic">Submit your first guess to reveal hidden clues about the digit.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {getHints().map((hint, i) => (
+                      <div key={i} className="flex items-start space-x-2 animate-in slide-in-from-right duration-300">
+                        <span className="text-cyan-500 text-lg">✦</span>
+                        <p className="text-slate-300 text-xs font-bold uppercase tracking-tight leading-tight">{hint}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
 
-                {recognizedDigit !== null && !showResult && (
-                  <div className="pt-4 border-t border-slate-700">
-                    <p className="text-xs text-slate-500 uppercase font-bold mb-1">Last AI Guess</p>
-                    <div className="flex items-baseline space-x-2">
-                      <span className="text-3xl font-black text-red-400">{recognizedDigit}</span>
-                      <span className="text-slate-400 text-xs">Incorrect! Try again.</span>
+                {recognizedDigit !== null && gameStatus === 'playing' && (
+                  <div className="pt-6 mt-4 border-t border-slate-800">
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <p className="text-[9px] text-slate-600 font-black uppercase mb-1">AI Detected</p>
+                        <span className="text-4xl font-black text-rose-400">{recognizedDigit}</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] text-slate-600 font-black uppercase mb-1">Status</p>
+                        <span className="text-xs font-bold text-rose-500">WRONG</span>
+                      </div>
                     </div>
                   </div>
                 )}
-                
-                {!showResult && wrongGuesses > 0 && (
-                  <p className="text-[10px] text-slate-600 uppercase font-bold mt-4">Tries remaining: {5 - wrongGuesses}</p>
-                )}
               </div>
+
+              {gameStatus === 'playing' && wrongGuesses > 0 && (
+                <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between">
+                  <p className="text-[10px] text-slate-600 font-black uppercase">Tries Left</p>
+                  <div className="flex gap-1">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className={`w-2 h-2 rounded-full ${i < (5 - wrongGuesses) ? 'bg-cyan-500' : 'bg-slate-800'}`} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             
             {error && (
-              <div className="bg-red-900/30 border border-red-500/50 text-red-200 p-3 rounded-lg text-xs font-bold">
+              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 p-4 rounded-xl text-[10px] font-bold">
                 ⚠️ {error}
               </div>
             )}

@@ -5,7 +5,7 @@ export async function recognizeDigit(base64Image: string, mode: 'draw' | 'webcam
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   if (!base64Image || base64Image === 'data:,') {
-    throw new Error('No input data provided.');
+    throw new Error('Please provide an input first.');
   }
 
   const parts = base64Image.split(';base64,');
@@ -14,8 +14,8 @@ export async function recognizeDigit(base64Image: string, mode: 'draw' | 'webcam
   const data = parts[1];
 
   const prompt = mode === 'draw' 
-    ? "Look at this handwritten digit on a black background. Identify the single digit (0-9). Only respond with the digit itself. If unclear, say 'X'."
-    : "Look at this person holding up fingers or showing a digit on paper. Identify the number (0-9) they are representing with their hand or gesture. Only respond with the digit. If unclear, say 'X'.";
+    ? "This is a drawing of a single digit (0-9) on a black background. Identify the digit. Return ONLY the digit itself."
+    : "The image shows a person making a hand gesture or holding a digit. Identify the single digit (0-9) represented. Return ONLY the digit itself.";
 
   try {
     const response: GenerateContentResponse = await ai.models.generateContent({
@@ -26,18 +26,25 @@ export async function recognizeDigit(base64Image: string, mode: 'draw' | 'webcam
           { text: prompt },
         ],
       },
-      config: { maxOutputTokens: 5 }
+      config: { 
+        temperature: 0.1,
+        maxOutputTokens: 5 
+      }
     });
 
     const recognizedText = response.text?.trim() || 'X';
-    if (recognizedText === 'X') throw new Error('AI could not recognize the input.');
+    const match = recognizedText.match(/\d/);
     
-    const cleanMatch = recognizedText.match(/\d/);
-    if (!cleanMatch) throw new Error('No digit found.');
+    if (!match) {
+      throw new Error('AI could not identify a clear digit. Please try again.');
+    }
 
-    return cleanMatch[0];
+    return match[0];
   } catch (error: any) {
     console.error("Gemini API error:", error);
-    throw new Error(`Recognition failed: ${error.message}`);
+    if (error.message?.includes("429")) {
+      throw new Error("API Quota exceeded. Please try again in a few seconds.");
+    }
+    throw new Error(error.message || "Recognition failed.");
   }
 }
