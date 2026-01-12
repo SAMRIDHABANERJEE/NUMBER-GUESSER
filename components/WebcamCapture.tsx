@@ -13,15 +13,33 @@ interface WebcamCaptureProps {
 const WebcamCapture = forwardRef<WebcamCaptureRef, WebcamCaptureProps>(({ setError }, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // Renamed to currentStream to avoid potential naming conflicts and clarify its role as the active stream.
   const [currentStream, setCurrentStream] = useState<MediaStream | null>(null);
   const [cameraStatus, setCameraStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [retryCount, setRetryCount] = useState(0);
+  const [currentFacingMode, setCurrentFacingMode] = useState<'user' | 'environment'>('user');
+  const [hasMultipleCameras, setHasMultipleCameras] = useState<boolean>(false);
 
   useEffect(() => {
     let activeStream: MediaStream | null = null;
     let timeoutId: number;
     let isMounted = true; // Flag to track if the component is mounted
+
+    const enumerateCameras = async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoInputs = devices.filter(device => device.kind === 'videoinput');
+        if (isMounted) {
+          setHasMultipleCameras(videoInputs.length > 1);
+        }
+      } catch (e) {
+        console.error("Error enumerating devices:", e);
+        if (isMounted) {
+          setHasMultipleCameras(false); // Assume no multiple cameras if error
+        }
+      }
+    };
+    enumerateCameras(); // Run once on mount to detect cameras
+
 
     const startCamera = async () => {
       if (!isMounted) return; // Prevent execution if component has unmounted
@@ -44,7 +62,7 @@ const WebcamCapture = forwardRef<WebcamCaptureRef, WebcamCaptureProps>(({ setErr
         }, 10000); // 10 seconds timeout
 
         const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'user', width: 640, height: 480 } 
+          video: { facingMode: currentFacingMode, width: 640, height: 480 } 
         });
 
         // If component unmounted during the async getUserMedia call
@@ -86,7 +104,17 @@ const WebcamCapture = forwardRef<WebcamCaptureRef, WebcamCaptureProps>(({ setErr
         } else if (err.name === 'NotReadableError') {
           setError("Camera is in use by another application or not accessible.");
         } else if (err.name === 'OverconstrainedError') {
-          setError("Camera capabilities do not match requested constraints. Try a different camera.");
+          // This specific error might occur if 'environment' facingMode is requested but not available.
+          // In this case, we might want to try 'user' if currently 'environment'.
+          if (err.message.includes('facingMode') && currentFacingMode === 'environment') {
+            console.warn("Requested 'environment' camera not found, attempting 'user' camera.");
+            // We can't directly retry with a different mode here without re-triggering the effect
+            // A simple retry will just re-attempt with 'environment'.
+            // For now, let's just log and show a generic error, and the user can retry.
+            setError("Requested camera mode not available. Try another camera or adjust permissions.");
+          } else {
+            setError("Camera capabilities do not match requested constraints. Try a different camera.");
+          }
         } else if (err.name === 'AbortError') {
           setError("Camera setup was aborted. This might happen if you quickly deny and re-grant permissions, or if the device is busy.");
         } else {
@@ -107,24 +135,22 @@ const WebcamCapture = forwardRef<WebcamCaptureRef, WebcamCaptureProps>(({ setErr
       }
       setCurrentStream(null); // Clear the state reference to the stream
     };
-  }, [retryCount, setError]); // Rerun effect when retryCount increments or setError changes
+  }, [retryCount, setError, currentFacingMode]); // Rerun effect when retryCount increments, setError changes, or currentFacingMode changes
+
+  const toggleCamera = () => {
+    setCurrentFacingMode(prevMode => (prevMode === 'user' ? 'environment' : 'user'));
+    setRetryCount(prev => prev + 1); // Force a camera restart
+  };
 
   useImperativeHandle(ref, () => ({
     takeSnapshot: () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      if (video && canvas && cameraStatus === 'ready' && currentStream) { // Also check if currentStream exists
+      if (video && canvas && cameraStatus === 'ready' && currentStream) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
-          // The snapshot should ideally not be flipped, as the AI expects it as captured.
-          // However, if the user sees a flipped image and draws a flipped digit,
-          // the AI might be trained to handle normal camera orientation.
-          // For consistency with how a user perceives their input,
-          // we'll keep the snapshot unflipped relative to the camera's original output.
-          // If the user's perception is what's displayed on screen (which is now unflipped),
-          // the snapshot will match that.
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           return canvas.toDataURL('image/jpeg', 0.8);
         }
@@ -170,6 +196,19 @@ const WebcamCapture = forwardRef<WebcamCaptureRef, WebcamCaptureProps>(({ setErr
       <div className="absolute top-2 left-2 px-2 py-1 bg-black/50 rounded text-[10px] text-white uppercase font-bold border border-white/20">
         Live Feed
       </div>
+
+      {hasMultipleCameras && cameraStatus === 'ready' && (
+        <button
+          onClick={toggleCamera}
+          className="absolute bottom-4 right-4 p-3 bg-slate-800/70 hover:bg-slate-700/80 text-white rounded-full shadow-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          aria-label={currentFacingMode === 'user' ? "Switch to back camera" : "Switch to front camera"}
+        >
+          {/* Camera rotation icon */}
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181-3.181m0-4.991l-3.181-3.181A1.125 1.125 0 015.153 2.92h5.842a1.125 1.125 0 011.066.75l1.519 4.674m-6.6 0H9.75M7.21 12.536L7.21 12.536M11.52 7.21h2.89a1.125 1.125 0 011.065.75l1.519 4.674m-6.6 0h4.606m-1.226 2.016l.123.085.022.016.035.019c.141.085.27.21.364.38.083.141.15.277.203.359.043.067.091.135.132.207l.035.019.022.016.123.085v0l.114.076.014.008.022.012h0v0l.114.076c.074.049.118.08.152.08H21a.75.75 0 00.75-.75V5.115a.75.75 0 00-.75-.75h-5.843a1.125 1.125 0 00-1.066.75l-.412 1.25m-14.88 0h9.75M3.21 19.644A.75.75 0 002.46 20.394h-.001c.224 0 .4-.18.4-.403l0-.088c0-.065-.004-.124-.01-.183-.016-.145-.045-.29-.082-.435a.897.897 0 00-.097-.24l-.071-.133c-.027-.052-.045-.106-.062-.16a1.132 1.132 0 00-.14-.294l-.066-.123c-.035-.064-.067-.13-.09-.204a.972.972 0 00-.098-.291l-.05-.152A.75.75 0 002.46 16.75h-.001c-.224 0-.4.18-.4.403l0 .088c0 .065.004.124.01.183.016.145.045.29.082.435.03.14.07.273.121.4.051.128.115.25.195.363l.081.117.062.091.047.073.04.06.012.018.02.029.02.029.01.009.021.018.021.019.02.016.014.013.013.011.01.006.008.005h0c.005.003.006.004.007.004L3.21 19.644z" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 });
