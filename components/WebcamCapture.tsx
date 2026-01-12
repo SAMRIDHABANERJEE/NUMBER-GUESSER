@@ -118,9 +118,13 @@ const WebcamCapture = forwardRef<WebcamCaptureRef, WebcamCaptureProps>(({ setErr
         if (ctx) {
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
-          // Flip horizontally for natural mirror effect
-          ctx.translate(canvas.width, 0);
-          ctx.scale(-1, 1);
+          // The snapshot should ideally not be flipped, as the AI expects it as captured.
+          // However, if the user sees a flipped image and draws a flipped digit,
+          // the AI might be trained to handle normal camera orientation.
+          // For consistency with how a user perceives their input,
+          // we'll keep the snapshot unflipped relative to the camera's original output.
+          // If the user's perception is what's displayed on screen (which is now unflipped),
+          // the snapshot will match that.
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           return canvas.toDataURL('image/jpeg', 0.8);
         }
@@ -160,7 +164,7 @@ const WebcamCapture = forwardRef<WebcamCaptureRef, WebcamCaptureProps>(({ setErr
         autoPlay
         playsInline
         muted
-        className="w-full h-full object-cover scale-x-[-1]"
+        className="w-full h-full object-cover"
       />
       <canvas ref={canvasRef} className="hidden" />
       <div className="absolute top-2 left-2 px-2 py-1 bg-black/50 rounded text-[10px] text-white uppercase font-bold border border-white/20">
