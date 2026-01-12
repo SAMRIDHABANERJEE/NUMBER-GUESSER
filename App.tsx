@@ -40,7 +40,7 @@ const App: React.FC = () => {
     if (wrongGuesses >= 2) hints.push(`The number is ${targetNumber > 4 ? 'GREATER than 4' : '4 or LESS'}.`);
     if (wrongGuesses >= 3) {
       const isPrime = [2, 3, 5, 7].includes(targetNumber);
-      hints.push(`The number is ${isPrime ? 'PRIME' : (targetNumber < 2 ? 'NEITHER' : 'COMPOSITE')}.`);
+      hints.push(`The number is ${isPrime ? 'PRIME' : (targetNumber < 2 ? 'NEITHER prime nor composite' : 'COMPOSITE')}.`);
     }
     return hints;
   };
@@ -60,7 +60,7 @@ const App: React.FC = () => {
       }
 
       if (!imageData || imageData === 'data:,') {
-        throw new Error('No input provided.');
+        throw new Error('No input provided. Please draw a digit or capture an image.');
       }
 
       const recognized = await recognizeDigit(imageData, inputMode);
@@ -96,12 +96,14 @@ const App: React.FC = () => {
           <button 
             onClick={() => setInputMode('draw')}
             className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${inputMode === 'draw' ? 'bg-cyan-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+            disabled={isLoading}
           >
             DRAWING
           </button>
           <button 
             onClick={() => setInputMode('webcam')}
             className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${inputMode === 'webcam' ? 'bg-cyan-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+            disabled={isLoading}
           >
             WEBCAM
           </button>
@@ -113,13 +115,13 @@ const App: React.FC = () => {
               {inputMode === 'draw' ? (
                 <DrawingCanvas ref={canvasRef} />
               ) : (
-                <WebcamCapture ref={webcamRef} />
+                <WebcamCapture ref={webcamRef} setError={setError} />
               )}
               
               {isLoading && (
                 <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center z-30 backdrop-blur-sm">
                   <LoadingSpinner />
-                  <p className="mt-4 text-cyan-400 font-black text-xs animate-pulse">AI IS THINKING...</p>
+                  <p className="mt-4 text-cyan-400 font-black text-sm animate-pulse">AI IS ANALYZING...</p>
                 </div>
               )}
 
@@ -133,11 +135,11 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex gap-2">
-              <Button onClick={handleGuess} disabled={isLoading || gameStatus !== 'playing'} className="flex-1">
+              <Button onClick={handleGuess} disabled={isLoading || gameStatus !== 'playing' || !!error} className="flex-1">
                 {inputMode === 'draw' ? 'SUBMIT GUESS' : 'CAPTURE GESTURE'}
               </Button>
               {inputMode === 'draw' && (
-                <Button onClick={() => canvasRef.current?.clearCanvas()} variant="secondary" className="px-4">
+                <Button onClick={() => canvasRef.current?.clearCanvas()} variant="secondary" className="px-4" disabled={isLoading || gameStatus !== 'playing' || !!error}>
                   RESET
                 </Button>
               )}
@@ -150,13 +152,13 @@ const App: React.FC = () => {
               
               <div className="flex-1 space-y-4">
                 {wrongGuesses === 0 && gameStatus === 'playing' ? (
-                  <p className="text-slate-600 text-xs italic">Submit your first guess to reveal hidden clues about the digit.</p>
+                  <p className="text-slate-600 text-sm italic">Submit your first guess to reveal hidden clues about the digit.</p>
                 ) : (
                   <div className="space-y-3">
                     {getHints().map((hint, i) => (
                       <div key={i} className="flex items-start space-x-2 animate-in slide-in-from-right duration-300">
-                        <span className="text-cyan-500 text-lg">✦</span>
-                        <p className="text-slate-300 text-xs font-bold uppercase tracking-tight leading-tight">{hint}</p>
+                        <span className="text-cyan-500 text-xl">✦</span>
+                        <p className="text-slate-300 text-sm font-bold uppercase tracking-tight leading-tight">{hint}</p>
                       </div>
                     ))}
                   </div>
@@ -191,8 +193,9 @@ const App: React.FC = () => {
             </div>
             
             {error && (
-              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 p-4 rounded-xl text-[10px] font-bold">
-                ⚠️ {error}
+              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 p-4 rounded-xl text-sm font-bold flex items-center space-x-3">
+                <span className="text-lg flex-shrink-0">⚠️</span>
+                <span>{error}</span>
               </div>
             )}
           </div>
